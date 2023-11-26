@@ -6,7 +6,7 @@ import (
 	"slices"
 )
 
-const defaultMinContiguous = 16 << 10 // 16 KiB
+const defaultMinContiguous = 16 << 10 // 16 Ki
 
 type entry[T any] struct {
 	order  int
@@ -66,21 +66,23 @@ func (c *Store[T]) Has(offset int, length int) bool {
 		return false
 	}
 
-	lastOffset := offset
+	completeTo := offset
 	for _, entry := range c.entries {
+		// If the entry is before the requested range, skip it.
 		if entry.offset+len(entry.data) < offset {
 			continue
 		}
-		if entry.offset > offset+length {
+		// If the entry starts after the requested range, or if there
+		// is a gap between the previous entry and this one, we're done.
+		if entry.offset > offset+length || completeTo < entry.offset {
 			break
 		}
 
-		if lastOffset < entry.offset {
-			return false
-		}
+		completeTo = entry.offset + len(entry.data)
 	}
 
-	return true
+	// If the cache contains the complete range, return true.
+	return completeTo >= offset+length
 }
 
 // Get populates `p` with the data at `offset`. If the cache does not contain the
@@ -90,7 +92,7 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 		return false
 	}
 
-	lastOffset := offset
+	completeTo := offset
 	complete := true
 	for _, entry := range c.entries {
 		if entry.offset+len(entry.data) < offset {
@@ -100,7 +102,7 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 			break
 		}
 
-		if lastOffset < entry.offset {
+		if completeTo < entry.offset {
 			complete = false
 		}
 
@@ -111,10 +113,10 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 			copy(p[offsetDelta:], entry.data)
 		}
 
-		lastOffset = entry.offset + len(entry.data)
+		completeTo = entry.offset + len(entry.data)
 	}
 
-	return complete
+	return complete && completeTo >= offset+len(p)
 }
 
 // Set sets the cache data at `offset` to `p`. If the cache already contains

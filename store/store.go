@@ -92,6 +92,8 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 		return false
 	}
 
+	// The logic for completeTo is the same as in Has, but we have to continue
+	// iterating over the entries to populate `p`.
 	completeTo := offset
 	complete := true
 	for _, entry := range c.entries {

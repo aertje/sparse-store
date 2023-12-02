@@ -10,13 +10,13 @@ const defaultMinContiguous = 16 << 10 // 16 Ki
 
 type entry[T any] struct {
 	order  int
-	offset int
+	offset int64
 	data   []T
 }
 
 type entries[T any] []entry[T]
 
-func (e entries[T]) Search(x int) int {
+func (e entries[T]) Search(x int64) int {
 	return sort.Search(len(e), func(i int) bool {
 		return e[i].offset >= x
 	})
@@ -27,8 +27,8 @@ type Store[T any] struct {
 
 	entries     entries[T]
 	insertCount int
-	occupancy   int
-	length      int
+	occupancy   int64
+	length      int64
 }
 
 type Option[T any] func(*Store[T])
@@ -51,17 +51,17 @@ func NewStore[T any](opts ...Option[T]) *Store[T] {
 	return cache
 }
 
-func (c *Store[T]) Occupancy() int {
+func (c *Store[T]) Occupancy() int64 {
 	return c.occupancy
 }
 
-func (c *Store[T]) Length() int {
+func (c *Store[T]) Length() int64 {
 	return c.length
 }
 
 // Has returns true if the cache contains data at `offset` with length
 // `length`.
-func (c *Store[T]) Has(offset int, length int) bool {
+func (c *Store[T]) Has(length, offset int64) bool {
 	if len(c.entries) == 0 && length > 0 {
 		return false
 	}
@@ -69,7 +69,7 @@ func (c *Store[T]) Has(offset int, length int) bool {
 	completeTo := offset
 	for _, entry := range c.entries {
 		// If the entry is before the requested range, skip it.
-		if entry.offset+len(entry.data) < offset {
+		if entry.offset+int64(len(entry.data)) < offset {
 			continue
 		}
 		// If the entry starts after the requested range, or if there
@@ -78,7 +78,7 @@ func (c *Store[T]) Has(offset int, length int) bool {
 			break
 		}
 
-		completeTo = entry.offset + len(entry.data)
+		completeTo = entry.offset + int64(len(entry.data))
 	}
 
 	// If the cache contains the complete range, return true.
@@ -87,7 +87,7 @@ func (c *Store[T]) Has(offset int, length int) bool {
 
 // Get populates `p` with the data at `offset`. If the cache does not contain the
 // complete data for this range, Get returns false.
-func (c *Store[T]) Get(offset int, p []T) bool {
+func (c *Store[T]) Get(p []T, offset int64) bool {
 	if len(c.entries) == 0 && len(p) > 0 {
 		return false
 	}
@@ -97,10 +97,10 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 	completeTo := offset
 	complete := true
 	for _, entry := range c.entries {
-		if entry.offset+len(entry.data) < offset {
+		if entry.offset+int64(len(entry.data)) < offset {
 			continue
 		}
-		if entry.offset > offset+len(p) {
+		if entry.offset > offset+int64(len(p)) {
 			break
 		}
 
@@ -115,27 +115,27 @@ func (c *Store[T]) Get(offset int, p []T) bool {
 			copy(p[offsetDelta:], entry.data)
 		}
 
-		completeTo = entry.offset + len(entry.data)
+		completeTo = entry.offset + int64(len(entry.data))
 	}
 
-	return complete && completeTo >= offset+len(p)
+	return complete && completeTo >= offset+int64(len(p))
 }
 
 // Set sets the cache data at `offset` to `p`. If the cache already contains
 // data at `offset`, it is overwritten.
-func (c *Store[T]) Set(offset int, p []T) {
+func (c *Store[T]) Set(p []T, offset int64) {
 	i := c.entries.Search(offset)
 	c.entries = slices.Insert(c.entries, i, entry[T]{c.insertCount, offset, p})
 	c.insertCount++
 
 	// If the length increased, update it.
-	if c.length < offset+len(p) {
-		c.length = offset + len(p)
+	if c.length < offset+int64(len(p)) {
+		c.length = offset + int64(len(p))
 	}
 
 	// Update the occupancy optimistically. If the entry is compacted, the
 	// occupancy will be updated again.
-	c.occupancy += len(p)
+	c.occupancy += int64(len(p))
 
 	c.compact()
 }
@@ -150,9 +150,9 @@ func (c *Store[T]) compact() {
 		next := &c.entries[i+1]
 
 		currentMin := current.offset
-		currentMax := current.offset + len(current.data)
+		currentMax := current.offset + int64(len(current.data))
 		nextMin := next.offset
-		nextMax := next.offset + len(next.data)
+		nextMax := next.offset + int64(len(next.data))
 
 		if nextMin < currentMax {
 			// If the current entry encompasses the next entry, copy if needed.
@@ -163,7 +163,7 @@ func (c *Store[T]) compact() {
 				}
 
 				c.entries = append(c.entries[:i+1], c.entries[i+2:]...)
-				c.occupancy -= len(next.data)
+				c.occupancy -= int64(len(next.data))
 				i--
 				continue
 			} else {
@@ -181,7 +181,7 @@ func (c *Store[T]) compact() {
 		}
 
 		// If the entries are contiguous and small enough, combine them.
-		if currentMax == nextMin && nextMax-currentMin <= c.minContiguous {
+		if currentMax == nextMin && int(nextMax-currentMin) <= c.minContiguous {
 			newData := make([]T, nextMax-currentMin)
 			copy(newData, current.data)
 			copy(newData[currentMax-currentMin:], next.data)

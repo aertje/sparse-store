@@ -11,7 +11,7 @@ import (
 )
 
 type entry struct {
-	offset int
+	offset int64
 	data   []byte
 }
 
@@ -33,8 +33,8 @@ func TestStoreSet(t *testing.T) {
 			for _, tc := range []struct {
 				name              string
 				content           []entry
-				expectedLength    int
-				expectedOccupancy int
+				expectedLength    int64
+				expectedOccupancy int64
 				expectedContent   []byte
 			}{
 				{
@@ -174,13 +174,13 @@ func TestStoreSet(t *testing.T) {
 					s := store.NewStore(topt.opt)
 
 					for _, entry := range tc.content {
-						s.Set(entry.offset, entry.data)
+						s.Set(entry.data, entry.offset)
 					}
 
 					assert.Equal(t, tc.expectedLength, s.Length())
 					assert.Equal(t, tc.expectedOccupancy, s.Occupancy())
 					data := make([]byte, len(tc.expectedContent))
-					s.Get(0, data)
+					s.Get(data, 0)
 					assert.Equal(t, tc.expectedContent, data)
 				})
 			}
@@ -192,7 +192,7 @@ func TestStoreGetAndHas(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		content         []entry
-		offset          int
+		offset          int64
 		expectedContent []byte
 		expectHas       bool
 	}{
@@ -328,15 +328,15 @@ func TestStoreGetAndHas(t *testing.T) {
 			s := store.NewStore[byte]()
 
 			for _, entry := range tc.content {
-				s.Set(entry.offset, entry.data)
+				s.Set(entry.data, entry.offset)
 			}
 
 			data := make([]byte, len(tc.expectedContent))
-			complete := s.Get(tc.offset, data)
+			complete := s.Get(data, tc.offset)
 			assert.Equal(t, tc.expectedContent, data)
 			assert.Equal(t, tc.expectHas, complete)
 
-			has := s.Has(tc.offset, len(tc.expectedContent))
+			has := s.Has(int64(len(tc.expectedContent)), tc.offset)
 			assert.Equal(t, tc.expectHas, has)
 		})
 	}
@@ -349,7 +349,7 @@ func BenchmarkStoreSet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := make([]byte, rand.Intn(1<<20)) // 1MiB
 		b.StartTimer()
-		s.Set(rand.Intn(1<<30), buf) // 1GiB
+		s.Set(buf, rand.Int63n(1<<30)) // 1GiB
 		b.StopTimer()
 	}
 }
